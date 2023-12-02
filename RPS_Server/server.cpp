@@ -7,6 +7,9 @@
 
 #define SERVERPORT 9000
 #define BUFSIZE    512
+#define GAWI 0
+#define BAWEE 1
+#define BO 2
 
 // 소켓 함수 오류 출력 후 종료
 void err_quit(char* msg)
@@ -35,98 +38,18 @@ void err_display(char* msg)
     LocalFree(lpMsgBuf);
 }
 
-const char* Print_win_rate() {
-    // 몇판 이겼는지에 대한 변수
-    // 몇판 졌는지에 대한 변수 계산해야함
-    char buffer[BUFSIZE];
-    int match_num = 10;
-    int win_num = 6;
-    int lose_num = 4;
-    float win_ratio = (float)win_num / lose_num;
-
-    const char win_info1[] = "판 플레이 / ";
-    const char win_info2[] = "판 승리, ";
-    const char win_info3[] = "판 패배 / ";
-    const char win_info4[] = "현재 승률 : ";
-    sprintf_s(buffer, "%d%s%d%s%d%s%s%f%%", match_num, win_info1, win_num, win_info2, lose_num, win_info3, win_info4, win_ratio);
-
-    return buffer;
-}
-
+// 서버와 클라이언트 간에 주고 받는 패킷 구조체 정의
+#pragma pack(1)
 typedef struct {
-    int RPS_flag=0;
-    char RPS_result[BUFSIZE];
-} RPS_result;
-
-RPS_result RPS(char client_RPS[]) {
-    RPS_result result;
-    char scissors[5] = "가위";
-    char rock[5] = "바위";
-    char paper[3] = "보";
-
-    // 서버가 랜덤으로 가위 바위 보를 내게 하기 위해서 시간에 따라 변화하게 함
-    srand(time(0));
-    int server_choice_num = rand() % 3;
-    char server_choice[5];
-
-    if (server_choice_num == 0)
-        strcpy_s(server_choice, scissors); // 랜덤으로 서버가 가위를 냄
-    else if (server_choice_num == 1)
-        strcpy_s(server_choice, rock); // 랜덤으로 서버가 바위를 냄
-    else if (server_choice_num == 2)
-        strcpy_s(server_choice, paper); // 랜덤으로 서버가 보를 냄
-
-    printf("server : %s\n", server_choice);
-
-    if (strcmp(server_choice, client_RPS) == 0) { // 무승부 가위-가위, 보-보, 바위-바위
-        printf("무승부입니다. 다시 도전!!");
-        strcpy_s(result.RPS_result,"무승부입니다. 다시 도전!!");
-        result.RPS_flag = 3;
-    }
-
-    else if (strcmp(server_choice, client_RPS) != 0) {
-        if (strcmp(scissors, client_RPS) == 0) { // 클라가 가위를 냈다면
-            if (strcmp(rock, server_choice) == 0) {
-                printf("서버 : %s, 클라 : %s (바위,가위로 패!)\n", server_choice, client_RPS); // 서버 : 바위, 클라 : 가위 클라패
-                strcpy_s(result.RPS_result, "서버가 바위를 내서 패배! <방어>합니다");
-                result.RPS_flag = 1;
-            }
-            else if (strcmp(paper, server_choice) == 0) {
-                printf("서버 :%s, 클라 : %s (보,가위로 승!)\n", server_choice, client_RPS); // 서버: 보, 클라 : 가위 클라승
-                strcpy_s(result.RPS_result, "서버가 보를 내서 승리! <공격>합니다");
-                result.RPS_flag = 2;
-            }
-        }
-
-        if (strcmp(rock, client_RPS) == 0) { // 클라가 바위를 냈다면
-            if (strcmp(scissors, server_choice) == 0) {
-                printf("서버 : %s, 클라 : %s (가위,바위로 승!)\n", server_choice, client_RPS); // 서버 : 가위, 클라 : 바위 클라승
-                strcpy_s(result.RPS_result, "서버가 가위를 내서 승리! <공격>합니다");
-                result.RPS_flag = 2;
-            }
-            else if (strcmp(paper, server_choice) == 0) {
-                printf("서버 :%s, 클라 : %s (보,바위로 패!)\n", server_choice, client_RPS); // 서버: 보, 클라 : 바위 클라패
-                strcpy_s(result.RPS_result, "서버가 보를 내서 패배! <방어>합니다");
-                result.RPS_flag = 1;
-            }
-        }
-
-        if (strcmp(paper, client_RPS) == 0) { // 클라가 보를 냈다면
-            if (strcmp(scissors, server_choice) == 0) {
-                printf("서버 : %s, 클라 : %s (가위,보로 패!)\n", server_choice, client_RPS); // 서버 : 가위, 클라 : 보 클라패
-                strcpy_s(result.RPS_result, "서버가 가위를 내서 패배! <방어>합니다");
-                result.RPS_flag = 1;
-            }
-            else if (strcmp(rock, server_choice) == 0) {
-                printf("서버 :%s, 클라 : %s (바위,보로 승!)\n", server_choice, client_RPS); // 서버: 바위, 클라 : 보 클라승
-                strcpy_s(result.RPS_result, "서버가 바위를 내서 승리! <공격>합니다");
-                result.RPS_flag = 2;
-            }
-        }
-    }
-
-    return result;
-}
+    int rps = 0; // 클라이언트가 선택한 가위바위보에 대한 플래그이다.        0 : 가위(찌), 1 : 바위(묵), 2 : 보(빠)
+    int status = 0; // 처음 게임 시작 할 때 데이터를 받는 필드.              0 : 게임 시작 대기 상태, 1 : 게임 시작!
+    int client_win_flag = 0; // 클라이언트가 승리할 때마다 1씩 증가.         클라이언트가 몇 판 이겼는지에 대한 Flag
+    int setnum_flag = 0; // 묵찌빠 승패 판정 때마다 1씩 증가.                묵찌빠 게임을 몇 판 했는지에 대한 Flag
+    int end_flag = 0; // 종료 플래그이다.                                    0 : default, 1 : 1이 들어오면 클라이언트 연결 바로 종료
+    int win_flag = 0; // 가위바위보 결과 플래그.                             0 : 무승부, 1 : 클라이언트 패배(묵찌빠 방어), 2 : 클라이언트 승리(묵찌빠 공격)
+    char data[64]; // 데이터 전달 필드
+} RPS;
+#pragma pack()
 
 int main(int argc, char* argv[])
 {
@@ -159,7 +82,8 @@ int main(int argc, char* argv[])
     SOCKADDR_IN clientaddr;
     int addrlen;
     char buf[BUFSIZE + 1];
-    char start_msg[72] = "***** 묵찌빠 게임을 시작하겠습니다.*****\n먼저 가위바위보를 진행합니다.\n"; // 시작할 때 보내는 Msg
+
+    RPS packet; // 서버와 클라이언트 간에 주고 받는 패킷 구조체 선언
 
     while (1) {
         // accept()
@@ -174,77 +98,276 @@ int main(int argc, char* argv[])
         printf("\n[TCP 서버] 클라이언트 접속: IP 주소=%s, 포트 번호=%d\n",
             inet_ntoa(clientaddr.sin_addr), ntohs(clientaddr.sin_port));
 
-        // 시작 Msg 보내기!!!!
-        send(client_sock, start_msg, strlen(start_msg), 0);
+        ZeroMemory(&packet, sizeof(packet));                                                // 서버에 연결 될 때마다 패킷 데이터 모두 0으로 초기화
 
         while (1) {
-
-            char win_rate[9] = "승률확인";
-            char game_out[5] = "종료";
-
-            if (strcmp(win_rate, buf) == 0) {
-                printf("승률 전송\n");
-                const char* RPS_result;
-                RPS_result = Print_win_rate();
-                retval = send(client_sock, RPS_result, BUFSIZE, 0);
+            if (packet.end_flag == 0) {
+                // 연결 성공시 최초 시작 Msg 보내기!!!!
+                strcpy_s(packet.data, "###############\t\t\t\tKJH 묵찌빠 게임\t\t\t\t###############");
+                retval = send(client_sock, (char*)&packet, sizeof(packet), 0);
                 if (retval == SOCKET_ERROR) {
                     err_display("send()");
+                    packet.end_flag = 1;
                     break;
                 }
-            }
+                else if (retval == 0)
+                    break;
 
-            if (strcmp(game_out, buf) == 0) {
-                printf("게임 종료\n");
-                char game_out[] = "게임을 종료합니다.";
-                retval = send(client_sock, game_out, sizeof(game_out), 0);
-                if (retval == SOCKET_ERROR) {
-                    err_display("send()");
-                    break;
-                }
-                break;
-            }
-            while (1) {
-                // 첫번째 가위바위보 데이터 받기
-                retval = recv(client_sock, buf, BUFSIZE, 0);
+                printf("요청 플래그 체크(전) : %d\n", packet.status);                       // 요청 플래그 제대로 전달 되었는지 확인하는 용도
+                retval = recv(client_sock, (char*)&packet, sizeof(packet), 0);              // 게임 시작 요청 플래그 받음 (클라이언트에서 '시작' 입력) --> packet.status = 1
                 if (retval == SOCKET_ERROR) {
                     err_display("recv()");
+                    packet.end_flag = 1;
                     break;
                 }
-                //else if (retval == 0)
-                //    break;
-
-                // 받은 데이터 출력
-                buf[retval] = '\0';
-                printf("[TCP/%s:%d] %s\n", inet_ntoa(clientaddr.sin_addr),
-                    ntohs(clientaddr.sin_port), buf);
-
-                RPS_result rps_result;
-
-                rps_result = RPS(buf); // 가위바위보 함수 호출
-                printf("%d, %s\n", rps_result.RPS_flag, rps_result.RPS_result); // 서버에 플래그, 결과메시지 출력
-
-                if (rps_result.RPS_flag == 1) {
-                    printf("패배했음. 서버가 공격할게\n");
-                    send(client_sock, rps_result.RPS_result, sizeof(rps_result.RPS_result), 0);
+                else if (retval == 0)
                     break;
-                }
-
-                else if (rps_result.RPS_flag == 2) {
-                    printf("승리했음. 클라가 공격하셈\n");
-                    send(client_sock, rps_result.RPS_result, sizeof(rps_result.RPS_result), 0);
-                    break;
-                }
-
-                else if (rps_result.RPS_flag == 3) {
-                    printf("무승부임\n");
-                    send(client_sock, rps_result.RPS_result, sizeof(rps_result.RPS_result), 0);
-                }
+                printf("요청 플래그 체크(후) : %d\n", packet.status);                       // 요청 플래그 제대로 전달 되었는지 확인하는 용도
             }
-            printf("가위바위보 끝 묵찌빠 시작");
-            //char MJP_msg[] = "묵찌빠 게임을 시작합니다. ";
-            //send(client_sock, MJP_msg, sizeof(MJP_msg), 0);
+            if (packet.end_flag == 1) {
+                printf("게임 시작 요청 단계에서 종료를 입력\n");                            // 게임 시작 요청 단계에서 클라이언트가 '종료' 입력시 연결 종료 
+                break;
+            }
 
-        }
+            while (packet.status == 1) {                                                    // 시작 요청 단계에서 올바르게 값을 전달 받아서 status가 1로 세트 되었다면 반복
+
+                if (packet.end_flag == 0)                                                   // end_flag가 0이라면 서버에 게임 시작 출력 (이 if문과 아래 else if문은 서버 동작 확인 용도로, 없어도 무방함)
+                    printf("게임 시작\n");
+
+                else if (packet.end_flag == 1) {                                            // end_flag가 1이라면 종료
+                    break;
+                }
+
+                // win_flag = 0이면 무승부라는 의미로, 가위바위보가 무승부라면 계속 반복
+                while (packet.win_flag == 0) {
+                    // 클라이언트의 가위바위보 데이터 받기
+                    retval = recv(client_sock, (char*)&packet, sizeof(packet), 0);
+                    if (retval == SOCKET_ERROR) {
+                        err_display("recv()");
+                        packet.end_flag = 1;
+                        break;
+                    }
+                    else if (retval == 0)
+                        break;
+
+                    if (packet.end_flag == 1) {
+                        printf("가위바위보 단계에서 종료를 입력\n");
+                        break;
+                    }
+
+                    // 받은 데이터 출력
+                    printf("[TCP/%s:%d] 클라가 보낸 것 : %d\n", inet_ntoa(clientaddr.sin_addr),
+                        ntohs(clientaddr.sin_port), packet.rps);                                // 0 : 가위, 1 : 바위, 2 : 보
+
+                    // 서버가 가위바위보를 랜덤으로 선택하게 하기 위한 부분
+                    srand(time(0));
+                    int server_rps = -1;                                                        // default:-1, 0:가위, 1:바위, 2:보
+                    server_rps = rand() % 3;
+                    printf("서버 선택 확인 : %d\n", server_rps);                                // 서버의 선택을 확인하기 위한 부분. 0 : 가위, 1 : 바위, 2 : 보
+
+                    // 가위바위보가 무승부라면( 서버 가위바위보 선택 = 클라 가위바위보 입력 )
+                    if (packet.rps == server_rps) {
+                        printf("가위바위보 무승부에요\n");
+                        packet.win_flag = 0;                                                    // win_flag --> 0 : 무승부, 1 : 클라 패배, 2 : 클라 승리
+                    }
+                    //가위바위보가 무승부가 아니라면
+                    else {
+                        if (packet.rps == GAWI) {                                               // 클라이언트가 가위를 입력했을 때
+                            if (server_rps == BAWEE) {                                          // 서버가 바위라면
+                                printf("클라 가위 서버 바위, 서버 승\n");
+                                packet.win_flag = 1;                                            // win_flag --> 0 : 무승부, 1 : 클라 패배, 2 : 클라 승리
+                            }
+                            else if (server_rps == BO) {                                        // 서버가 보라면
+                                printf("클라 가위 서버 보, 클라 승\n");
+                                packet.win_flag = 2;                                            // win_flag --> 0 : 무승부, 1 : 클라 패배, 2 : 클라 승리
+                            }
+                        }
+                        else if (packet.rps == BAWEE) {                                         // 클라이언트가 바위를 입력했을 때
+                            if (server_rps == GAWI) {                                           // 서버가 가위라면
+                                printf("클라 바위 서버 가위, 클라 승\n");
+                                packet.win_flag = 2;                                            // win_flag --> 0 : 무승부, 1 : 클라 패배, 2 : 클라 승리
+                            }
+                            else if (server_rps == BO) {                                        // 서버가 보라면
+                                printf("클라 바위 서버 보 , 서버 승\n");
+                                packet.win_flag = 1;                                            // win_flag --> 0 : 무승부, 1 : 클라 패배, 2 : 클라 승리
+                            }
+                        }
+                        else if (packet.rps = BO) {                                             // 클라이언트가 보를 입력했을 때
+                            if (server_rps == GAWI) {                                           // 서버가 가위라면
+                                printf("클라 보 서버 가위, 서버 승\n");
+                                packet.win_flag = 1;                                            // win_flag --> 0 : 무승부, 1 : 클라 패배, 2 : 클라 승리
+                            }
+                            else if (server_rps == BAWEE) {                                     // 서버가 바위라면
+                                printf("클라 보 서버 바위, 클라 승\n");
+                                packet.win_flag = 2;                                            // win_flag --> 0 : 무승부, 1 : 클라 패배, 2 : 클라 승리
+                            }
+                        }
+                    }
+
+                    // 가위바위보 판정 결과(win_flag) 클라이언트에게 전송
+                    retval = send(client_sock, (char*)&packet, sizeof(packet), 0);
+                    if (retval == SOCKET_ERROR) {
+                        err_display("send()");
+                        packet.end_flag = 1;
+                        break;
+                    }
+                    else if (retval == 0)
+                        break;
+                    printf("가위바위보하고 승리플래그 패킷 보냈음. %d바이트\n", retval);
+                } // 가위바위보 끝나는 while 문
+
+                // 종료 플래그가 1이 아니라면(종료를 입력하지 않았다면 묵찌빠 진행)
+                if (packet.end_flag == 0) {
+                    // 묵찌빠 게임 시작
+                    // 클라이언트가 승리했거나 패배했다면. 즉, 가위바위보가 무승부가 아니라면
+                    if (packet.win_flag == 1 || packet.win_flag == 2) {
+                        strcpy_s(packet.data, "묵찌빠 게임을 진행합니다");
+                        retval = send(client_sock, (char*)&packet, sizeof(packet), 0);          // 묵찌빠 게임 시작한다고 클라이언트에게 전송
+                        if (retval == SOCKET_ERROR) {
+                            err_display("send()");
+                            packet.end_flag = 1;
+                            break;
+                        }
+                        else if (retval == 0)
+                            break;
+                        printf("%d바이트. 묵찌빠시작한다고 보냈음\n", retval);
+
+                        while (1) {
+                            // 묵찌빠 데이터 받기
+                            printf("묵찌빠 들어오길 기다리는 중...\n");
+                            retval = recv(client_sock, (char*)&packet, sizeof(packet), 0);
+                            if (retval == SOCKET_ERROR) {
+                                err_display("recv()");
+                                break;
+                            }
+
+                            // 묵찌빠 단계에서 '종료' 입력시 종료
+                            if (packet.end_flag == 1) {
+                                printf("묵찌빠 단계에서 종료를 입력\n");
+                                break;
+                            }
+
+                            printf("[TCP/%s:%d] 클라가 보낸 것 : %d\n", inet_ntoa(clientaddr.sin_addr),
+                                ntohs(clientaddr.sin_port), packet.rps);                        // 묵찌빠 데이터 확인.  0 : 찌, 1 : 묵, 2 : 빠
+
+                            // 서버가 묵찌빠를 랜덤으로 선택하게 하기 위한 부분
+                            srand(time(0));
+                            int server_mjp = -1;                                                // default:-1, 0:가위, 1:바위, 2:보
+                            server_mjp = rand() % 3;
+                            printf("서버 선택 확인 : %d\n", server_mjp);
+
+                            // 클라이언트가 '방어' 일 때
+                            if (packet.win_flag == 1) {
+                                // 클라이언트와 서버의 묵찌빠가 같다면 클라이언트 패배
+                                if (packet.rps == server_mjp) {
+                                    printf("서버가 이겼음!! 수고!!!\n");
+                                    // 게임 종료와 함께 패배 메시지 전송. 패킷 내용 일부 초기화
+                                    strcpy_s(packet.data, "게임 종료 : 패배하셨습니다!!ㅠㅠ\n");
+                                    packet.status = 0;
+                                    packet.win_flag = 0;
+                                    packet.setnum_flag += 1;                                    // 서버가 이겼으니까 세트 수만 증가하고 승률 플래그 증가 안함.
+                                    send(client_sock, (char*)&packet, sizeof(packet), 0);
+                                    if (retval == SOCKET_ERROR) {
+                                        err_display("send()");
+                                        packet.end_flag = 1;
+                                        break;
+                                    }
+                                    else if (retval == 0)
+                                        break;
+                                    break; // 게임 종료로 현재 게임 탈출 후 다음 게임 진행
+                                }
+                                else if (packet.rps == GAWI && server_mjp == BO) {              // 클라 방어상태에서 클라이언트가 가위바위보를 이긴다면 공수 교대
+                                    printf("클라 : 찌, 서버 : 빠 || 공수교대\n");
+                                    strcpy_s(packet.data, "클라 : 찌, 서버 : 빠 || 공수  교대(클라 공격)\n");
+                                    packet.win_flag = 2;                                        // 공수 교대를 위해 승리 플래그 전환
+                                }
+                                else if (packet.rps == GAWI && server_mjp == BAWEE) {           // 클라 방어상태에서 클라이언트가 가위바위보를 진다면 공수그대로유지
+                                    printf("클라 : 찌, 서버 : 묵 || 공수그대로\n");
+                                    strcpy_s(packet.data, "클라 : 찌, 서버 : 묵 || 공수그대로(클라 방어)\n");
+                                }
+                                else if (packet.rps == BAWEE && server_mjp == BO) {
+                                    printf("클라 : 묵, 서버 : 빠 || 공수그대로\n");
+                                    strcpy_s(packet.data, "클라 : 묵, 서버 : 빠 || 공수그대로(클라 방어)\n");
+                                }
+                                else if (packet.rps == BAWEE && server_mjp == GAWI) {
+                                    printf("클라 : 묵, 서버 : 찌 || 공수교대\n");
+                                    strcpy_s(packet.data, "클라 : 묵, 서버 : 찌 || 공수  교대(클라 공격)\n");
+                                    packet.win_flag = 2;
+                                }
+                                else if (packet.rps == BO && server_mjp == BAWEE) {
+                                    printf("클라 : 빠, 서버 : 묵 || 공수교대\n");
+                                    strcpy_s(packet.data, "클라 : 빠, 서버 : 묵 || 공수  교대(클라 공격)\n");
+                                    packet.win_flag = 2;
+                                }
+                                else if (packet.rps == BO && server_mjp == GAWI) {
+                                    printf("클라 : 빠, 서버 : 찌 || 공수그대로\n");
+                                    strcpy_s(packet.data, "클라 : 빠, 서버 : 찌 || 공수그대로(클라 방어)\n");
+                                }
+                            }
+
+                            // 클라이언트가 '공격' 일 때
+                            else if (packet.win_flag == 2) {
+                                // 클라이언트와 서버의 묵찌빠가 같다면 클라이언트 승리
+                                if (packet.rps == server_mjp) {
+                                    printf("클라가 이겼음!! ㅋㅋ");
+                                    // 게임 종료와 함께 승리 메시지 전송. 패킷 내용 일부 초기화
+                                    strcpy_s(packet.data, "게임 종료 : ★승리★하셨습니다!!!!!!!!\n");
+                                    packet.status = 0;
+                                    packet.win_flag = 0;
+                                    packet.setnum_flag += 1;
+                                    packet.client_win_flag += 1;                                // 클라가 이겼으므로 세트 수랑 승률 플래그 둘 다 증가
+                                    send(client_sock, (char*)&packet, sizeof(packet), 0);
+                                    if (retval == SOCKET_ERROR) {
+                                        err_display("send()");
+                                        packet.end_flag = 1;
+                                        break;
+                                    }
+                                    else if (retval == 0)
+                                        break;
+                                    break; // 게임 종료로 현재 게임 탈출 후 다음 게임 진행
+                                }
+                                else if (packet.rps == GAWI && server_mjp == BO) {              // 클라 공격상태에서 클라이언트가 가위바위보를 이긴다면 공수그대로유지
+                                    printf("클라 : 찌, 서버 : 빠 || 공수그대로");
+                                    strcpy_s(packet.data, "클라 : 찌, 서버 : 빠 || 공수그대로(클라 공격)\n");
+                                }
+                                else if (packet.rps == GAWI && server_mjp == BAWEE) {           // 클라 공격상태에서 클라이언트가 가위바위보를 진다면 공수 교대
+                                    printf("클라 : 찌, 서버 : 묵 || 공수교대");
+                                    strcpy_s(packet.data, "클라 : 찌, 서버 : 묵 || 공수교대(클라 방어)\n");
+                                    packet.win_flag = 1;                                        // 공수 교대를 위해 승리 플래그 전환
+                                }
+                                else if (packet.rps == BAWEE && server_mjp == BO) {
+                                    printf("클라 : 묵, 서버 : 빠 || 공수교대");
+                                    strcpy_s(packet.data, "클라 : 묵, 서버 : 빠 || 공수교대(클라 방어)\n");
+                                    packet.win_flag = 1;
+                                }
+                                else if (packet.rps == BAWEE && server_mjp == GAWI) {
+                                    printf("클라 : 묵, 서버 : 찌 || 공수그대로");
+                                    strcpy_s(packet.data, "클라 : 묵, 서버 : 찌 || 공수그대로(클라 공격)\n");
+                                }
+                                else if (packet.rps == BO && server_mjp == BAWEE) {
+                                    printf("클라 : 빠, 서버 : 묵 || 공수그대로");
+                                    strcpy_s(packet.data, "클라 : 빠, 서버 : 묵 || 공수그대로(클라 공격)\n");
+                                }
+                                else if (packet.rps == BO && server_mjp == GAWI) {
+                                    printf("클라 : 빠, 서버 : 찌 || 공수교대");
+                                    strcpy_s(packet.data, "클라 : 빠, 서버 : 찌 || 공수교대(클라 방어)\n");
+                                    packet.win_flag = 1;
+                                }
+                            }
+                            send(client_sock, (char*)&packet, sizeof(packet), 0);
+                            if (retval == SOCKET_ERROR) {
+                                err_display("send()");
+                                packet.end_flag = 1;
+                                break;
+                            }
+                            else if (retval == 0)
+                                break;
+                        }
+
+                    }// 묵찌빠 게임 조건문. win_flag가 1이나 2일 때.
+                } // 종료 플래그가 0일 때 진행하는 조건문
+            } // 게임 시작 요청 플래그가 1일 때 진행하는 반복문
+        } // 클라이언트 accept하면 반복하는 무한루프
 
         // closesocket()
         closesocket(client_sock);
@@ -257,5 +380,5 @@ int main(int argc, char* argv[])
     // 윈속 종료
     WSACleanup();
     return 0;
-    //깃허브 체험중
+
 }
